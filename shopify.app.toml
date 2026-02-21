@@ -1,0 +1,15 @@
+client_id = "26cae6ef23457d99739d11309f757889"
+name = "discount-impact-app"
+application_url = "https://discount-impact-app-production.up.railway.app"
+embedded = true
+
+[auth]
+redirect_urls = [
+  "https://discount-impact-app-production.up.railway.app/auth/callback"
+]
+
+[access_scopes]
+scopes = "read_products,write_products,read_orders"
+
+[webhooks]
+api_version = "2024-04"

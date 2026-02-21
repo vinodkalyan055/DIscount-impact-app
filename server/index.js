@@ -8,6 +8,7 @@ const { shopify, storeSession } = require("./shopify");
 const simulateRouter = require("./routes/simulate");
 const applyRouter = require("./routes/apply");
 const trackRouter = require("./routes/track");
+const productsRouter = require("./routes/products");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +53,7 @@ app.get("/auth/callback", async (req, res) => {
 app.use("/simulate", simulateRouter);
 app.use("/apply", applyRouter);
 app.use("/track", trackRouter);
+app.use("/api/products", productsRouter);
 
 // ─── Health Check ────────────────────────────────────────────────
 
@@ -74,6 +76,12 @@ app.get("/", (_req, res) => {
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f6f6f7; color: #202223; padding: 20px; }
         h1 { margin-bottom: 8px; }
         .subtitle { color: #6d7175; margin-bottom: 24px; }
+        .nav { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 2px solid #e1e3e5; }
+        .nav-tab { padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; background: none; color: #6d7175; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+        .nav-tab:hover { color: #202223; }
+        .nav-tab.active { color: #008060; border-bottom-color: #008060; }
+        .page { display: none; }
+        .page.active { display: block; }
         .card { background: #fff; border: 1px solid #e1e3e5; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
         .card h2 { margin-bottom: 12px; font-size: 16px; }
         label { display: block; margin-bottom: 4px; font-weight: 500; font-size: 14px; }
@@ -85,10 +93,14 @@ app.get("/", (_req, res) => {
         table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
         th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e1e3e5; }
         th { background: #f6f6f7; font-weight: 600; }
+        td img { border-radius: 4px; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
-        .badge.profit { background: #aee9d1; color: #0a5c36; }
+        .badge.profit, .badge.active { background: #aee9d1; color: #0a5c36; }
         .badge.loss { background: #fed3d1; color: #72231d; }
         .badge.break-even { background: #ffd79d; color: #5a3e00; }
+        .badge.draft { background: #e4e5e7; color: #44474a; }
+        .badge.archived { background: #e4e5e7; color: #6d7175; }
+        .loading { text-align: center; padding: 40px; color: #6d7175; }
         #results, #trackResults { margin-top: 16px; }
         .actions { display: flex; gap: 8px; margin-top: 12px; }
       </style>
@@ -97,36 +109,78 @@ app.get("/", (_req, res) => {
       <h1>Discount Experiment Engine</h1>
       <p class="subtitle">Simulate, apply, and track discount experiments on your products.</p>
 
-      <!-- Plan A: Simulate -->
-      <div class="card">
-        <h2>Plan A &mdash; Simulate Discount Impact</h2>
-        <label for="simDiscount">Discount %</label>
-        <input type="number" id="simDiscount" placeholder="e.g. 15" min="1" max="99" />
-        <button onclick="runSimulate()">Simulate</button>
-        <div id="results"></div>
+      <div class="nav">
+        <button class="nav-tab active" onclick="switchTab('experiments')">Experiments</button>
+        <button class="nav-tab" onclick="switchTab('products')">Products</button>
       </div>
 
-      <!-- Plan B: Apply -->
-      <div class="card">
-        <h2>Plan B &mdash; Apply Discount</h2>
-        <p style="font-size:13px;color:#6d7175;margin-bottom:12px;">Select products from the simulation above, then apply.</p>
-        <label for="baselineUnits">Baseline Units (avg sold before discount)</label>
-        <input type="number" id="baselineUnits" placeholder="e.g. 50" min="1" />
-        <button onclick="runApply()">Apply Discount to Selected</button>
-        <div id="applyResults"></div>
+      <!-- Experiments Page -->
+      <div id="page-experiments" class="page active">
+        <div class="card">
+          <h2>Plan A &mdash; Simulate Discount Impact</h2>
+          <label for="simDiscount">Discount %</label>
+          <input type="number" id="simDiscount" placeholder="e.g. 15" min="1" max="99" />
+          <button onclick="runSimulate()">Simulate</button>
+          <div id="results"></div>
+        </div>
+
+        <div class="card">
+          <h2>Plan B &mdash; Apply Discount</h2>
+          <p style="font-size:13px;color:#6d7175;margin-bottom:12px;">Select products from the simulation above, then apply.</p>
+          <label for="baselineUnits">Baseline Units (avg sold before discount)</label>
+          <input type="number" id="baselineUnits" placeholder="e.g. 50" min="1" />
+          <button onclick="runApply()">Apply Discount to Selected</button>
+          <div id="applyResults"></div>
+        </div>
+
+        <div class="card">
+          <h2>Plan C &mdash; Track Performance</h2>
+          <button onclick="runTrack()">Refresh Tracking</button>
+          <div id="trackResults"></div>
+        </div>
       </div>
 
-      <!-- Plan C: Track -->
-      <div class="card">
-        <h2>Plan C &mdash; Track Performance</h2>
-        <button onclick="runTrack()">Refresh Tracking</button>
-        <div id="trackResults"></div>
+      <!-- Products Page -->
+      <div id="page-products" class="page">
+        <div class="card">
+          <h2>Products</h2>
+          <div id="productsTable"><div class="loading">Loading products...</div></div>
+        </div>
       </div>
 
       <script>
         const params = new URLSearchParams(window.location.search);
         const shop = params.get('shop') || '';
         let simData = [];
+        let productsLoaded = false;
+
+        function switchTab(tab) {
+          document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+          document.querySelector('[onclick="switchTab(\\'' + tab + '\\')"]').classList.add('active');
+          document.getElementById('page-' + tab).classList.add('active');
+          if (tab === 'products' && !productsLoaded) loadProducts();
+        }
+
+        async function loadProducts() {
+          const container = document.getElementById('productsTable');
+          container.innerHTML = '<div class="loading">Loading products...</div>';
+          try {
+            const res = await fetch('/api/products?shop=' + shop);
+            const data = await res.json();
+            if (data.error) { container.innerHTML = '<p style="color:#d72c0d;">' + data.error + '</p>'; return; }
+            if (!data.products || data.products.length === 0) { container.innerHTML = '<p style="color:#6d7175;">No products found.</p>'; return; }
+            let html = '<table><tr><th>Image</th><th>Title</th><th>Status</th><th>Vendor</th><th>Type</th><th>Inventory</th><th>Variants</th><th>Price</th></tr>';
+            data.products.forEach(p => {
+              const img = p.image ? '<img src="' + p.image + '&width=40" alt="' + p.imageAlt + '" width="40" height="40" />' : '<span style="display:inline-block;width:40px;height:40px;background:#e1e3e5;border-radius:4px;"></span>';
+              const statusClass = p.status === 'ACTIVE' ? 'active' : p.status === 'DRAFT' ? 'draft' : 'archived';
+              html += '<tr><td>' + img + '</td><td>' + p.title + '</td><td><span class="badge ' + statusClass + '">' + p.status.toLowerCase() + '</span></td><td>' + (p.vendor || '-') + '</td><td>' + (p.productType || '-') + '</td><td>' + p.totalInventory + '</td><td>' + p.variantsCount + '</td><td>$' + parseFloat(p.price).toFixed(2) + '</td></tr>';
+            });
+            html += '</table>';
+            container.innerHTML = html;
+            productsLoaded = true;
+          } catch (err) { container.innerHTML = '<p style="color:#d72c0d;">Failed to load products.</p>'; }
+        }
 
         async function runSimulate() {
           const discount = document.getElementById('simDiscount').value;
