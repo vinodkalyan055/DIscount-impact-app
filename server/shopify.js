@@ -1,6 +1,7 @@
 require("@shopify/shopify-api/adapters/node");
-const { shopifyApi, LATEST_API_VERSION } = require("@shopify/shopify-api");
+const { shopifyApi, LATEST_API_VERSION, Session } = require("@shopify/shopify-api");
 const { restResources } = require("@shopify/shopify-api/rest/admin/2024-04");
+const SessionModel = require("./models/Session");
 
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -12,20 +13,24 @@ const shopify = shopifyApi({
   restResources,
 });
 
-// In-memory session storage (swap for DB-backed in production)
-const sessionStore = new Map();
-
+// MongoDB-backed session storage
 const storeSession = async (session) => {
-  sessionStore.set(session.id, session);
+  await SessionModel.findOneAndUpdate(
+    { id: session.id },
+    { id: session.id, data: session.toObject() },
+    { upsert: true }
+  );
   return true;
 };
 
 const loadSession = async (id) => {
-  return sessionStore.get(id) || undefined;
+  const doc = await SessionModel.findOne({ id });
+  if (!doc) return undefined;
+  return new Session(doc.data);
 };
 
 const deleteSession = async (id) => {
-  sessionStore.delete(id);
+  await SessionModel.deleteOne({ id });
   return true;
 };
 
