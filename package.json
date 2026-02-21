@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@shopify/shopify-api": "^9.7.2",
+    "@shopify/shopify-app-express": "^4.1.6",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
