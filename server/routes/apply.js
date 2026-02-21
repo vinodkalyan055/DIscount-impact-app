@@ -17,9 +17,9 @@ const VARIANT_QUERY = `query ($id: ID!) {
   }
 }`;
 
-const VARIANT_UPDATE = `mutation ($input: ProductVariantInput!) {
-  productVariantUpdate(input: $input) {
-    productVariant {
+const VARIANT_UPDATE = `mutation ($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+    productVariants {
       id
       price
     }
@@ -69,11 +69,12 @@ router.post("/", async (req, res) => {
       // Update variant price in Shopify
       const updateRes = await client.request(VARIANT_UPDATE, {
         variables: {
-          input: { id: variantId, price: String(calc.newPrice) },
+          productId,
+          variants: [{ id: variantId, price: String(calc.newPrice) }],
         },
       });
 
-      const userErrors = updateRes.data.productVariantUpdate.userErrors;
+      const userErrors = updateRes.data.productVariantsBulkUpdate.userErrors;
       if (userErrors.length > 0) {
         results.push({ variantId, error: userErrors });
         continue;
